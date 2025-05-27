@@ -1,7 +1,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/crdb-schema-exporter)](https://pypi.org/project/crdb-schema-exporter/)
-[![Python version](https://img.shields.io/pypi/pyversions/crdb-schema-exporter)](https://pypi.org/project/crdb-schema-exporter/)
+[![Python versions](https://img.shields.io/pypi/pyversions/crdb-schema-exporter)](https://pypi.org/project/crdb-schema-exporter/)
 [![License](https://img.shields.io/pypi/l/crdb-schema-exporter)](https://pypi.org/project/crdb-schema-exporter/)
-[![Build status](https://github.com/viragtripathi/crdb-schema-exporter/actions/workflows/python-ci.yml/badge.svg)](https://github.com/viragtripathi/crdb-sql-audit/actions)
+[![Build status](https://github.com/viragtripathi/crdb-schema-exporter/actions/workflows/test.yml/badge.svg)](https://github.com/viragtripathi/crdb-schema-exporter/actions)
 
 # CRDB Schema Exporter
 
