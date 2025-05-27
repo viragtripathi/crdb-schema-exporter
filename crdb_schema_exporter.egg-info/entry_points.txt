@@ -1,2 +1,0 @@
-[console_scripts]
-crdb-schema-exporter = crdb_schema_exporter.exporter:main

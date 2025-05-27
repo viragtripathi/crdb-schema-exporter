@@ -14,10 +14,11 @@ dependency-reduced-pom.xml
 .gradle
 README.html
 *.iml
-.idea
 *.log
 *.gfs
 logs/**
 buildNumber.properties
 versions.properties
 **/.DS_Store
+/.idea/
+*.egg-info
