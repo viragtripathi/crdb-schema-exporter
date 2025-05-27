@@ -1,0 +1,5 @@
+sqlalchemy
+sqlalchemy-cockroachdb
+click
+pyyaml
+psycopg2-binary

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crdb-schema-exporter"
+version = "0.1.0"
+description = "A CLI utility to export CockroachDB schemas in SQL, JSON, or YAML formats."
+authors = [
+    { name="Virag Tripathi", email="virag.tripathi@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.7"
+license = { text = "MIT" }
+dependencies = [
+    "sqlalchemy",
+    "sqlalchemy-cockroachdb",
+    "click",
+    "pyyaml",
+    "psycopg2-binary"
+]
+
+[project.scripts]
+crdb-schema-exporter = "crdb_schema_exporter.exporter:main"
+
+[tool.setuptools.packages.find]
+where = ["."]

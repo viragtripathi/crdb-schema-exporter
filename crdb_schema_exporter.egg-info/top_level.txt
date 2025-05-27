@@ -1,0 +1,6 @@
+build
+crdb_schema_dumps
+crdb_schema_exporter
+logs
+tests
+venv
