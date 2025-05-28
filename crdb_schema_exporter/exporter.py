@@ -1,4 +1,6 @@
 import os
+import csv
+import gzip
 import json
 import yaml
 import tarfile
@@ -6,18 +8,18 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 import difflib
 import click
+import importlib.metadata
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Default logger
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
-# Utility functions
+# Setup logging
 def setup_logging(log_dir, verbose):
     log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-    logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
     console_handler = logging.StreamHandler()
@@ -34,12 +36,17 @@ def setup_logging(log_dir, verbose):
     logger.info(f"Logging to file: {log_filename}")
     return logger
 
-
+# File writing helpers
 def write_file(path, content):
     with open(path, 'w') as f:
         f.write(content)
     logger.info(f"Wrote: {path}")
 
+def archive_output(directory):
+    archive_name = f"{directory}.tar.gz"
+    with tarfile.open(archive_name, "w:gz") as tar:
+        tar.add(directory, arcname=os.path.basename(directory))
+    logger.info(f"Archived output to {archive_name}")
 
 def dump_create_statement(engine, obj_type, full_name):
     try:
@@ -54,7 +61,6 @@ def dump_create_statement(engine, obj_type, full_name):
     except SQLAlchemyError as e:
         logger.error(f"Failed to get DDL for {obj_type} {full_name}: {e}")
         return None
-
 
 def collect_objects(engine, db, obj_type):
     query_map = {
@@ -76,19 +82,50 @@ def collect_objects(engine, db, obj_type):
         logger.error(f"Error fetching {obj_type}s: {e}")
     return objs
 
+def export_table_data(engine, table, out_dir, export_format, split, limit, compress):
+    try:
+        db, tbl = table.split('.')
+        base_name = tbl.replace('.', '_')
+        with engine.connect() as conn:
+            cols_res = conn.execute(text(f"SELECT column_name FROM information_schema.columns WHERE table_name='{tbl}'"))
+            columns = [row[0] for row in cols_res]
 
-def diff_schemas(file1, file2):
-    with open(file1) as f1, open(file2) as f2:
-        lines1 = f1.readlines()
-        lines2 = f2.readlines()
-        return ''.join(difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2))
+            offset = 0
+            batch_size = 1000
+            all_rows = []
 
+            while True:
+                query = f"SELECT * FROM {table} OFFSET {offset} LIMIT {batch_size}"
+                if limit and offset >= limit:
+                    break
+                rows = conn.execute(text(query)).fetchall()
+                if not rows:
+                    break
+                all_rows.extend(rows)
+                offset += batch_size
+                if limit and len(all_rows) >= limit:
+                    all_rows = all_rows[:limit]
+                    break
 
-def archive_output(directory):
-    archive_name = f"{directory}.tar.gz"
-    with tarfile.open(archive_name, "w:gz") as tar:
-        tar.add(directory, arcname=os.path.basename(directory))
-    logger.info(f"Archived output to {archive_name}")
+            out_path = os.path.join(out_dir, f"{base_name}.csv.gz" if compress else f"{base_name}.csv") if export_format == 'csv' else os.path.join(out_dir, f"{base_name}_data.sql")
+
+            if export_format == 'csv':
+                open_func = gzip.open if compress else open
+                mode = 'wt' if compress else 'w'
+                with open_func(out_path, mode, newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(columns)
+                    writer.writerows(all_rows)
+            elif export_format == 'sql':
+                with open(out_path, 'w') as f:
+                    for row in all_rows:
+                        vals = ", ".join([repr(v).replace("'", "''") if v is not None else 'NULL' for v in row])
+                        f.write(f"INSERT INTO {tbl} ({', '.join(columns)}) VALUES ({vals});\n")
+
+            logger.info(f"Exported data for {table} to {out_path}")
+
+    except SQLAlchemyError as e:
+        logger.error(f"Failed to export data for {table}: {e}")
 
 @click.command()
 @click.option('--db', required=True, help='Database name')
@@ -96,13 +133,19 @@ def archive_output(directory):
 @click.option('--certs-dir', default=None, help='Path to TLS certs directory')
 @click.option('--tables', default=None, help='Comma-separated list of db.table names')
 @click.option('--per-table', is_flag=True, help='Output per-object files')
-@click.option('--format', 'out_format', type=click.Choice(['sql', 'json', 'yaml']), default='sql', help='Output format')
+@click.option('--format', 'out_format', type=click.Choice(['sql', 'json', 'yaml']), default='sql', help='Schema output format')
 @click.option('--archive', is_flag=True, help='Compress output directory')
 @click.option('--diff', 'diff_file', default=None, help='Compare output with existing SQL file')
 @click.option('--parallel', is_flag=True, help='Enable parallel DDL export')
 @click.option('--verbose', is_flag=True, help='Enable debug logging')
 @click.option('--log-dir', default='logs', help='Directory to store log files')
-def main(db, host, certs_dir, tables, per_table, out_format, archive, diff_file, parallel, verbose, log_dir):
+@click.option('--data', is_flag=True, help='Dump table data as INSERT or CSV')
+@click.option('--data-format', type=click.Choice(['sql', 'csv']), default='sql', help='Data export format')
+@click.option('--data-split', is_flag=True, help="Write each table's data to a separate file")
+@click.option('--data-limit', type=int, default=None, help='Limit number of rows per table')
+@click.option('--data-compress', is_flag=True, help='Compress CSV data output as .csv.gz')
+@click.version_option(importlib.metadata.version("crdb-schema-exporter"))
+def main(db, host, certs_dir, tables, per_table, out_format, archive, diff_file, parallel, verbose, log_dir, data, data_format, data_split, data_limit, data_compress):
     global logger
     logger = setup_logging(log_dir, verbose)
 
@@ -155,14 +198,22 @@ def main(db, host, certs_dir, tables, per_table, out_format, archive, diff_file,
     elif out_format == "yaml":
         write_file(f"{out_dir}/{db}_schema.yaml", yaml.dump(dump_data))
 
+    if data:
+        for table in table_list:
+            export_table_data(engine, table, out_dir, data_format, data_split, data_limit, data_compress)
+
     if diff_file:
         diff_result = diff_schemas(f"{out_dir}/{db}_schema.sql", diff_file)
         print("\n🕵️  Schema Diff:")
         print(diff_result if diff_result else "No differences found.")
 
+        diff_path = os.path.join(out_dir, f"{db}_schema.diff")
+        with open(diff_path, "w") as f:
+            f.write(diff_result if diff_result else "No differences found.\n")
+        logger.info(f"Diff saved to: {diff_path}")
+
     if archive:
         archive_output(out_dir)
-
 
 if __name__ == '__main__':
     main()

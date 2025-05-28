@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crdb-schema-exporter"
-version = "0.1.1"
+version = "0.1.2"
 description = "A CLI utility to export CockroachDB schemas in SQL, JSON, or YAML formats."
 authors = [
     { name="Virag Tripathi", email="virag.tripathi@gmail.com" }
