@@ -48,6 +48,12 @@ def archive_output(directory):
         tar.add(directory, arcname=os.path.basename(directory))
     logger.info(f"Archived output to {archive_name}")
 
+def diff_schemas(file1, file2):
+    with open(file1) as f1, open(file2) as f2:
+        lines1 = f1.readlines()
+        lines2 = f2.readlines()
+        return ''.join(difflib.unified_diff(lines1, lines2, fromfile=file1, tofile=file2))
+
 def dump_create_statement(engine, obj_type, full_name):
     try:
         with engine.connect() as conn:
